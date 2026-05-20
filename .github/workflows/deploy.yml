@@ -3,78 +3,67 @@ name: Build & Deploy NETLORE
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # lets you trigger manually from GitHub UI
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed for gh-pages push
+      contents: write
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node ────────────────────────────────────────────────────
-      - name: Setup Node 20
+      - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
-      # ── 3. Confirm secret exists (safe — only prints length) ───────
       - name: Verify API key secret
         run: |
           if [ -z "$YT_KEY" ]; then
-            echo "❌ VITE_YOUTUBE_API_KEY secret is MISSING in GitHub repo settings"
-            echo "   Go to: Repo → Settings → Secrets and variables → Actions → New secret"
+            echo "❌ VITE_YOUTUBE_API_KEY secret is MISSING"
+            echo "   Repo → Settings → Secrets and variables → Actions → New secret"
             echo "   Name:  VITE_YOUTUBE_API_KEY"
-            echo "   Value: your AIza... key"
+            echo "   Value: AIza..."
             exit 1
           else
-            echo "✅ VITE_YOUTUBE_API_KEY secret found (length: ${#YT_KEY})"
+            echo "✅ VITE_YOUTUBE_API_KEY found (length: ${#YT_KEY})"
           fi
         env:
           YT_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY }}
 
-      # ── 4. Write .env explicitly before build ──────────────────────
-      #    Vite reads .env at build time — writing it here guarantees
-      #    the key is available even if env: block timing is off.
       - name: Write .env
         run: |
           echo "VITE_YOUTUBE_API_KEY=${{ secrets.VITE_YOUTUBE_API_KEY }}" >> .env
           echo "VITE_APP_NAME=NETLORE" >> .env
-          # Set base URL to /reponame/ for GitHub Pages subpath
-          # Change 'netlore' to your actual repo name if different
           echo "VITE_BASE_URL=/${{ github.event.repository.name }}/" >> .env
           echo "✅ .env written"
 
-      # ── 5. Install ─────────────────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
-      # ── 6. Build ───────────────────────────────────────────────────
       - name: Build
         run: npm run build
 
-      # ── 7. Confirm build output exists ─────────────────────────────
       - name: Verify dist
         run: |
           echo "📦 dist/ contents:"
           ls -lh dist/
-          # Confirm key was baked in (grep redacts value, just checks presence)
           if grep -r "AIza" dist/ --include="*.js" -l > /dev/null 2>&1; then
-            echo "✅ API key successfully baked into bundle"
+            echo "✅ API key baked into bundle"
           else
-            echo "⚠️  API key not found in bundle — check secret name matches exactly"
+            echo "⚠️  API key not found in bundle"
           fi
 
-      # ── 8. Deploy to gh-pages branch ──────────────────────────────
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          # SPA: copy index.html to 404.html so refreshes don't 404
           enable_jekyll: false
